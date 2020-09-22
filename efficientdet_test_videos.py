@@ -14,15 +14,15 @@ from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import preprocess, invert_affine, postprocess, preprocess_video
 
 # Video's path
-video_src = 'videotest.mp4'  # set int to use webcam, set str to read from a video file
+video_src = 2  # set int to use webcam, set str to read from a video file
 
-compound_coef = 0
+compound_coef = 2
 force_input_size = None  # set None to use default size
 
 threshold = 0.2
 iou_threshold = 0.2
 
-use_cuda = True
+use_cuda = False
 use_float16 = False
 cudnn.fastest = True
 cudnn.benchmark = True
@@ -53,6 +53,7 @@ if use_cuda:
 if use_float16:
     model = model.half()
 
+
 # function for display
 def display(preds, imgs):
     for i in range(len(imgs)):
@@ -68,8 +69,10 @@ def display(preds, imgs):
             cv2.putText(imgs[i], '{}, {:.3f}'.format(obj, score),
                         (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         (255, 255, 0), 1)
-        
+
         return imgs[i]
+
+
 # Box
 regressBoxes = BBoxTransform()
 clipBoxes = ClipBoxes()
@@ -97,23 +100,18 @@ while True:
         features, regression, classification, anchors = model(x)
 
         out = postprocess(x,
-                        anchors, regression, classification,
-                        regressBoxes, clipBoxes,
-                        threshold, iou_threshold)
+                          anchors, regression, classification,
+                          regressBoxes, clipBoxes,
+                          threshold, iou_threshold)
 
     # result
     out = invert_affine(framed_metas, out)
     img_show = display(out, ori_imgs)
 
     # show frame by frame
-    cv2.imshow('frame',img_show)
-    if cv2.waitKey(1) & 0xFF == ord('q'): 
+    cv2.imshow('frame', img_show)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
 cv2.destroyAllWindows()
-
-
-
-
-

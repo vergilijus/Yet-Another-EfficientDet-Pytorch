@@ -4,21 +4,25 @@
 Simple Inference Script of EfficientDet-Pytorch
 """
 import time
+import os
 import torch
 from torch.backends import cudnn
 from matplotlib import colors
 
 from backbone import EfficientDetBackbone
-import cv2
+import cv2 as cv
 import numpy as np
 
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, STANDARD_COLORS, standard_to_bgr, get_index_label, plot_one_box
+from utils.utils import preprocess, invert_affine, postprocess, STANDARD_COLORS, standard_to_bgr, get_index_label, \
+    plot_one_box
 
-compound_coef = 0
+compound_coef = 3
 force_input_size = None  # set None to use default size
-img_path = 'test/img.png'
-
+img_dir = 'test/val'
+img_path = [os.path.join(img_dir, file) for file in os.listdir(img_dir)]
+img_path = img_path[:2]
+print(img_path)
 # replace this part with your project's anchor config
 anchor_ratios = [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
 anchor_scales = [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]
@@ -26,7 +30,7 @@ anchor_scales = [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]
 threshold = 0.2
 iou_threshold = 0.2
 
-use_cuda = True
+use_cuda = False
 use_float16 = False
 cudnn.fastest = True
 cudnn.benchmark = True
@@ -42,12 +46,12 @@ obj_list = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train'
             'refrigerator', '', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier',
             'toothbrush']
 
-
 color_list = standard_to_bgr(STANDARD_COLORS)
 # tf bilinear interpolation is different from any other's, just make do
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 input_size = input_sizes[compound_coef] if force_input_size is None else force_input_size
-ori_imgs, framed_imgs, framed_metas = preprocess(img_path, max_size=input_size)
+images = [cv.imread(path) for path in img_path]
+ori_imgs, framed_imgs, framed_metas = preprocess(images, max_size=input_size)
 
 if use_cuda:
     x = torch.stack([torch.from_numpy(fi).cuda() for fi in framed_imgs], 0)
@@ -78,6 +82,7 @@ with torch.no_grad():
                       regressBoxes, clipBoxes,
                       threshold, iou_threshold)
 
+
 def display(preds, imgs, imshow=True, imwrite=False):
     for i in range(len(imgs)):
         if len(preds[i]['rois']) == 0:
@@ -89,15 +94,15 @@ def display(preds, imgs, imshow=True, imwrite=False):
             x1, y1, x2, y2 = preds[i]['rois'][j].astype(np.int)
             obj = obj_list[preds[i]['class_ids'][j]]
             score = float(preds[i]['scores'][j])
-            plot_one_box(imgs[i], [x1, y1, x2, y2], label=obj,score=score,color=color_list[get_index_label(obj, obj_list)])
-
+            plot_one_box(imgs[i], [x1, y1, x2, y2], label=obj, score=score,
+                         color=color_list[get_index_label(obj, obj_list)])
 
         if imshow:
-            cv2.imshow('img', imgs[i])
-            cv2.waitKey(0)
+            cv.imshow('img', imgs[i])
+            cv.waitKey(0)
 
         if imwrite:
-            cv2.imwrite(f'test/img_inferred_d{compound_coef}_this_repo_{i}.jpg', imgs[i])
+            cv.imwrite(f'test/img_inferred_d{compound_coef}_this_repo_{i}.jpg', imgs[i])
 
 
 out = invert_affine(framed_metas, out)
@@ -106,9 +111,10 @@ display(out, ori_imgs, imshow=False, imwrite=True)
 print('running speed test...')
 with torch.no_grad():
     print('test1: model inferring and postprocessing')
-    print('inferring image for 10 times...')
     t1 = time.time()
-    for _ in range(10):
+    n_iter = 1
+    print(f'inferring image for {n_iter} times...')
+    for _ in range(n_iter):
         _, regression, classification, anchors = model(x)
 
         out = postprocess(x,
@@ -118,8 +124,9 @@ with torch.no_grad():
         out = invert_affine(framed_metas, out)
 
     t2 = time.time()
-    tact_time = (t2 - t1) / 10
-    print(f'{tact_time} seconds, {1 / tact_time} FPS, @batch_size 1')
+    bs = len(x)
+    tact_time = (t2 - t1) / n_iter
+    print(f'{tact_time} seconds, {bs / tact_time} FPS, @batch_size {bs}')
 
     # uncomment this if you want a extreme fps test
     # print('test2: model inferring only')
