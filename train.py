@@ -222,6 +222,8 @@ def train(opt):
                 continue
 
             epoch_loss = []
+            epoch_cls_loss = []
+            epoch_reg_loss = []
             progress_bar = tqdm(training_generator)
             for iter, data in enumerate(progress_bar):
                 if iter < step - last_epoch * num_iter_per_epoch:
@@ -251,6 +253,8 @@ def train(opt):
                     optimizer.step()
 
                     epoch_loss.append(float(loss))
+                    epoch_cls_loss.append(float(cls_loss))
+                    epoch_reg_loss.append(float(reg_loss))
 
                     progress_bar.set_description(
                         'Step: {}. Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Total loss: {:.5f}'.format(
@@ -279,8 +283,11 @@ def train(opt):
                     print('[Error]', traceback.format_exc())
                     print(e)
                     continue
+
             scheduler.step(np.mean(epoch_loss))
-            neptune.log_metric('Epoch loss', epoch, np.mean(epoch_loss))
+            neptune.log_metric('Epoch Loss', step, np.mean(epoch_loss))
+            neptune.log_metric('Epoch Classification Loss', step, np.mean(epoch_cls_loss))
+            neptune.log_metric('Epoch Regression Loss', step, np.mean(epoch_reg_loss))
 
             if epoch % opt.val_interval == 0:
                 model.eval()
