@@ -16,6 +16,9 @@ tensorboard = "*"
 tensorboardx = "*"
 pyyaml = "*"
 webcolors = "*"
+neptune-client = "*"
+psutil = "*"
+neptune-contrib = "*"
 
 [requires]
 python_version = "3.7"

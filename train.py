@@ -22,6 +22,11 @@ from efficientdet.loss import FocalLoss
 from utils.sync_batchnorm import patch_replication_callback
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
 
+import neptune
+from neptunecontrib.versioning import log_data_version
+
+neptune.init('neptunus/queue-detection')
+
 
 class Params:
     def __init__(self, project_file):
@@ -41,6 +46,7 @@ def get_args():
                         help='whether finetunes only the regressor and the classifier, '
                              'useful in early stage convergence or small/easy dataset')
     parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--optim', type=str, default='adamw', help='select optimizer for training, '
                                                                    'suggest using \'admaw\' until the'
                                                                    ' very final stage then switch to \'sgd\'')
@@ -71,11 +77,11 @@ class ModelWithLoss(nn.Module):
         self.model = model
         self.debug = debug
 
-    def forward(self, imgs, annotations, obj_list=None):
+    def forward(self, imgs, annotations, obj_list=None, epoch=0):
         _, regression, classification, anchors = self.model(imgs)
         if self.debug:
             cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations,
-                                                imgs=imgs, obj_list=obj_list)
+                                                imgs=imgs, obj_list=obj_list, epoch=epoch)
         else:
             cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations)
         return cls_loss, reg_loss
@@ -83,6 +89,15 @@ class ModelWithLoss(nn.Module):
 
 def train(opt):
     params = Params(f'projects/{opt.project}.yml')
+
+    # Neptune staff
+    all_params = opt.__dict__
+    all_params.update(params.params)
+
+    data_path = os.path.join(opt.data_path, params.project_name)
+
+    neptune.create_experiment(name='EfficientDet', params=all_params, upload_source_files=['train.py'])
+    log_data_version(data_path)
 
     if params.num_gpus == 0:
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -112,7 +127,7 @@ def train(opt):
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
     training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                             Augmenter(),
+                                                             # Augmenter(),
                                                              Resizer(input_sizes[opt.compound_coef])]))
     training_generator = DataLoader(training_set, **training_params)
 
@@ -188,7 +203,7 @@ def train(opt):
     if opt.optim == 'adamw':
         optimizer = torch.optim.AdamW(model.parameters(), opt.lr)
     else:
-        optimizer = torch.optim.SGD(model.parameters(), opt.lr, momentum=0.9, nesterov=True)
+        optimizer = torch.optim.SGD(model.parameters(), opt.lr, momentum=opt.momentum, nesterov=True)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
 
@@ -223,7 +238,7 @@ def train(opt):
                         annot = annot.cuda()
 
                     optimizer.zero_grad()
-                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list, epoch=epoch)
                     cls_loss = cls_loss.mean()
                     reg_loss = reg_loss.mean()
 
@@ -245,9 +260,14 @@ def train(opt):
                     writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
                     writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
 
+                    neptune.log_metric('Train Loss', step, loss)
+                    neptune.log_metric('Train Regression_loss', step, reg_loss)
+                    neptune.log_metric('Train Classification_loss', step, cls_loss)
+
                     # log learning_rate
                     current_lr = optimizer.param_groups[0]['lr']
                     writer.add_scalar('learning_rate', current_lr, step)
+                    neptune.log_metric('Learning rate', step, current_lr)
 
                     step += 1
 
@@ -260,6 +280,7 @@ def train(opt):
                     print(e)
                     continue
             scheduler.step(np.mean(epoch_loss))
+            neptune.log_metric('Epoch loss', epoch, np.mean(epoch_loss))
 
             if epoch % opt.val_interval == 0:
                 model.eval()
@@ -296,6 +317,10 @@ def train(opt):
                 writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
                 writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
 
+                neptune.log_metric('Val Loss', step, loss)
+                neptune.log_metric('Val Regression_loss', step, reg_loss)
+                neptune.log_metric('Val Classification_loss', step, cls_loss)
+
                 if loss + opt.es_min_delta < best_loss:
                     best_loss = loss
                     best_epoch = epoch
@@ -312,6 +337,7 @@ def train(opt):
         save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
         writer.close()
     writer.close()
+    neptune.stop()
 
 
 def save_checkpoint(model, name):

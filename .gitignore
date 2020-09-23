@@ -133,5 +133,7 @@ weights/
 # Project
 models
 /test/
-/test/
+/logs/
+/val_bbox_results.json
 /datasets/
+/Pipfile.lock

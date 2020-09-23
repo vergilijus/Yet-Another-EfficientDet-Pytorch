@@ -164,6 +164,7 @@ class FocalLoss(nn.Module):
 
         # debug
         imgs = kwargs.get('imgs', None)
+        epoch = kwargs.get('epoch', 0)
         if imgs is not None:
             regressBoxes = BBoxTransform()
             clipBoxes = ClipBoxes()
@@ -171,11 +172,11 @@ class FocalLoss(nn.Module):
             out = postprocess(imgs.detach(),
                               torch.stack([anchors[0]] * imgs.shape[0], 0).detach(), regressions.detach(), classifications.detach(),
                               regressBoxes, clipBoxes,
-                              0.5, 0.3)
+                              0.2, 0.2)
             imgs = imgs.permute(0, 2, 3, 1).cpu().numpy()
             imgs = ((imgs * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255).astype(np.uint8)
             imgs = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in imgs]
-            display(out, imgs, obj_list, imshow=False, imwrite=True)
+            display(out, imgs, obj_list, imshow=False, imwrite=True, epoch=epoch)
 
         return torch.stack(classification_losses).mean(dim=0, keepdim=True), \
                torch.stack(regression_losses).mean(dim=0, keepdim=True) * 50  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
