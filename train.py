@@ -21,6 +21,7 @@ from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, co
 from efficientdet.loss import FocalLoss
 from utils.sync_batchnorm import patch_replication_callback
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
+from coco_eval import evaluate
 
 import neptune
 from neptunecontrib.versioning import log_data_version
@@ -327,6 +328,16 @@ def train(opt):
                 neptune.log_metric('Val Loss', step, loss)
                 neptune.log_metric('Val Regression_loss', step, reg_loss)
                 neptune.log_metric('Val Classification_loss', step, cls_loss)
+
+                with torch.no_grad():
+                    stats = evaluate(model.model, params.params)
+
+                neptune.log_metric('AP at IoU=.50:.05:.95', step, stats[0])
+                neptune.log_metric('AP at IoU=.50', step, stats[1])
+                neptune.log_metric('AP at IoU=.75', step, stats[2])
+                neptune.log_metric('AR given 1 detection per image', step, stats[6])
+                neptune.log_metric('AR given 10 detection per image', step, stats[7])
+                neptune.log_metric('AR given 100 detection per image', step, stats[8])
 
                 if loss + opt.es_min_delta < best_loss:
                     best_loss = loss
