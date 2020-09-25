@@ -71,7 +71,7 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, params, step, thre
 
         preds = invert_affine(framed_metas, preds)[0]
 
-        display([preds], [image], params['obj_list'], imshow=False, imwrite=False, send=True, step=step)
+        display([preds], [image], params['obj_list'], imshow=False, imwrite=False, send=True, step=step, tag='val')
 
         scores = preds['scores']
         class_ids = preds['class_ids']

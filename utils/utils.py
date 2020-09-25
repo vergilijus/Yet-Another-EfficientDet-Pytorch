@@ -129,7 +129,7 @@ def postprocess(x, anchors, regression, classification, regressBoxes, clipBoxes,
     return out
 
 
-def display(preds, imgs, obj_list, imshow=True, imwrite=False, send=False, step=0):
+def display(preds, imgs, obj_list, imshow=True, imwrite=False, send=False, step=0, tag=''):
     for i in range(len(imgs)):
         if len(preds[i]['rois']) == 0:
             continue
@@ -153,7 +153,7 @@ def display(preds, imgs, obj_list, imshow=True, imwrite=False, send=False, step=
             cv2.imwrite(f'test/{name}.jpg', imgs[i])
 
         if send:
-            neptune.log_image(f'train_step_{step}', imgs[i][..., ::-1])
+            neptune.log_image(f'image_{tag}_step_{step}', imgs[i][..., ::-1])
 
 
 def replace_w_sync_bn(m):

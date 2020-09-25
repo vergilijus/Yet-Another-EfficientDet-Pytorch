@@ -63,9 +63,11 @@ def get_args():
     parser.add_argument('-w', '--load_weights', type=str, default=None,
                         help='whether to load weights from a checkpoint, set None to initialize, set \'last\' to load last checkpoint')
     parser.add_argument('--saved_path', type=str, default='logs/')
-    parser.add_argument('--debug', type=boolean_string, default=False,
+    parser.add_argument('--debug', action='store_true',
                         help='whether visualize the predicted boxes of training, '
                              'the output images will be in test/')
+    parser.add_argument('--no_aug', action='store_true',
+                        help='Disable all augmentations')
 
     args = parser.parse_args()
     return args
@@ -101,7 +103,10 @@ def train(opt):
     if opt.head_only:
         tags.append('head_only')
 
-    neptune.create_experiment(name='EfficientDet', tags=tags, params=all_params, upload_source_files=['train.py'])
+    neptune.create_experiment(name='EfficientDet',
+                              tags=tags,
+                              params=all_params,
+                              upload_source_files=['train.py', 'coco_eval.py'])
     log_data_version(data_path)
 
     if params.num_gpus == 0:
@@ -130,10 +135,16 @@ def train(opt):
                   'num_workers': opt.num_workers}
 
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
+    if opt.no_aug:
+        transform_list = [Normalizer(mean=params.mean, std=params.std),
+                          Resizer(input_sizes[opt.compound_coef])]
+    else:
+        transform_list = [Normalizer(mean=params.mean, std=params.std),
+                          Augmenter(),
+                          Resizer(input_sizes[opt.compound_coef])]
+
     training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
-                               transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                             # Augmenter(),
-                                                             Resizer(input_sizes[opt.compound_coef])]))
+                               transform=transforms.Compose(transform_list))
     training_generator = DataLoader(training_set, **training_params)
 
     val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
@@ -361,8 +372,8 @@ def train(opt):
 
     except KeyboardInterrupt:
         save_checkpoint(model, opt.saved_path, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
-        writer.close()
         send_best_checkpoint(best_checkpoint)
+        writer.close()
     writer.close()
     send_best_checkpoint(best_checkpoint)
     neptune.stop()
