@@ -22,13 +22,13 @@ from pycocotools.cocoeval import COCOeval
 
 from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, boolean_string
+from utils.utils import preprocess, invert_affine, postprocess, boolean_string, display
 import cv2 as cv
 
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 
 
-def evaluate(model, params):
+def evaluate(model, params, threshold=0.2, step=0):
     set_name = params['val_set']
     val_gt = f'datasets/{params["project_name"]}/annotations/instances_{set_name}.json'
     val_imgs = f'datasets/{params["project_name"]}/{set_name}/'
@@ -36,11 +36,13 @@ def evaluate(model, params):
     coco_gt = COCO(val_gt)
     image_ids = coco_gt.getImgIds()[:max_images]
 
-    evaluate_coco(val_imgs, set_name, image_ids, coco_gt, model, threshold=0.05, compound_coef=params['compound_coef'])
+    evaluate_coco(val_imgs, set_name, image_ids, coco_gt, model, params, step=step, threshold=threshold,
+                  compound_coef=params['compound_coef'])
     return _eval(coco_gt, image_ids, f'{set_name}_bbox_results.json')
 
 
-def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05, nms_threshold=0.5, compound_coef=4, use_cuda=True):
+def evaluate_coco(img_path, set_name, image_ids, coco, model, params, step, threshold=0.2, nms_threshold=0.5,
+                  compound_coef=4, use_cuda=True):
     results = []
 
     regressBoxes = BBoxTransform()
@@ -68,6 +70,8 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05, nm
             continue
 
         preds = invert_affine(framed_metas, preds)[0]
+
+        display([preds], [image], params['obj_list'], imshow=False, imwrite=False, send=True, step=step)
 
         scores = preds['scores']
         class_ids = preds['class_ids']

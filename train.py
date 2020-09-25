@@ -78,11 +78,11 @@ class ModelWithLoss(nn.Module):
         self.model = model
         self.debug = debug
 
-    def forward(self, imgs, annotations, obj_list=None, epoch=0):
+    def forward(self, imgs, annotations, obj_list=None, step=0):
         _, regression, classification, anchors = self.model(imgs)
         if self.debug:
             cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations,
-                                                imgs=imgs, obj_list=obj_list, epoch=epoch)
+                                                imgs=imgs, obj_list=obj_list, step=step)
         else:
             cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations)
         return cls_loss, reg_loss
@@ -241,7 +241,7 @@ def train(opt):
                         annot = annot.cuda()
 
                     optimizer.zero_grad()
-                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list, epoch=epoch)
+                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list, step=step)
                     cls_loss = cls_loss.mean()
                     reg_loss = reg_loss.mean()
 
@@ -266,13 +266,13 @@ def train(opt):
                     writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
 
                     neptune.log_metric('Train Loss', step, loss)
-                    neptune.log_metric('Train Regression_loss', step, reg_loss)
-                    neptune.log_metric('Train Classification_loss', step, cls_loss)
+                    neptune.log_metric('Train Regression Loss', step, reg_loss)
+                    neptune.log_metric('Train Classification Loss', step, cls_loss)
 
                     # log learning_rate
                     current_lr = optimizer.param_groups[0]['lr']
                     writer.add_scalar('learning_rate', current_lr, step)
-                    neptune.log_metric('Learning rate', step, current_lr)
+                    neptune.log_metric('Learning Rate', step, current_lr)
 
                     step += 1
 
@@ -322,15 +322,15 @@ def train(opt):
                     'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
                         epoch, opt.num_epochs, cls_loss, reg_loss, loss))
                 writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
-                writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
+                writer.add_scalars('Regression Loss', {'val': reg_loss}, step)
+                writer.add_scalars('Classfication Loss', {'val': cls_loss}, step)
 
                 neptune.log_metric('Val Loss', step, loss)
-                neptune.log_metric('Val Regression_loss', step, reg_loss)
-                neptune.log_metric('Val Classification_loss', step, cls_loss)
+                neptune.log_metric('Val Regression Loss', step, reg_loss)
+                neptune.log_metric('Val Classification Loss', step, cls_loss)
 
                 with torch.no_grad():
-                    stats = evaluate(model.model, params.params)
+                    stats = evaluate(model.model, params.params, step=step)
 
                 neptune.log_metric('AP at IoU=.50:.05:.95', step, stats[0])
                 neptune.log_metric('AP at IoU=.50', step, stats[1])

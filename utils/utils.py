@@ -129,7 +129,7 @@ def postprocess(x, anchors, regression, classification, regressBoxes, clipBoxes,
     return out
 
 
-def display(preds, imgs, obj_list, imshow=True, imwrite=False, epoch=0):
+def display(preds, imgs, obj_list, imshow=True, imwrite=False, send=False, step=0):
     for i in range(len(imgs)):
         if len(preds[i]['rois']) == 0:
             continue
@@ -149,11 +149,11 @@ def display(preds, imgs, obj_list, imshow=True, imwrite=False, epoch=0):
 
         if imwrite:
             name = uuid.uuid4().hex
-            # os.makedirs('test/', exist_ok=True)
-            # cv2.imwrite(f'test/{name}.jpg', imgs[i])
-            neptune.log_image(f'train_epoch_{epoch}', imgs[i][..., ::-1])
+            os.makedirs('test/', exist_ok=True)
+            cv2.imwrite(f'test/{name}.jpg', imgs[i])
 
-
+        if send:
+            neptune.log_image(f'train_step_{step}', imgs[i][..., ::-1])
 
 
 def replace_w_sync_bn(m):
