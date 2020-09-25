@@ -226,6 +226,7 @@ def train(opt):
     epoch = 0
     best_loss = 1e5
     best_epoch = 0
+    best_step = 0
     best_checkpoint = None
     step = max(0, last_step)
     model.train()
@@ -241,6 +242,66 @@ def train(opt):
             epoch_loss = []
             epoch_cls_loss = []
             epoch_reg_loss = []
+
+            if epoch % opt.val_interval == 0:
+                model.eval()
+                loss_regression_ls = []
+                loss_classification_ls = []
+                for iter, data in enumerate(val_generator):
+                    with torch.no_grad():
+                        imgs = data['img']
+                        annot = data['annot']
+
+                        if params.num_gpus == 1:
+                            imgs = imgs.cuda()
+                            annot = annot.cuda()
+
+                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                        cls_loss = cls_loss.mean()
+                        reg_loss = reg_loss.mean()
+
+                        loss = cls_loss + reg_loss
+                        if loss == 0 or not torch.isfinite(loss):
+                            continue
+
+                        loss_classification_ls.append(cls_loss.item())
+                        loss_regression_ls.append(reg_loss.item())
+
+                cls_loss = np.mean(loss_classification_ls)
+                reg_loss = np.mean(loss_regression_ls)
+                loss = cls_loss + reg_loss
+
+                print(
+                    'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
+                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
+                writer.add_scalars('Loss', {'val': loss}, step)
+                writer.add_scalars('Regression Loss', {'val': reg_loss}, step)
+                writer.add_scalars('Classfication Loss', {'val': cls_loss}, step)
+
+                neptune.log_metric('Val Loss', step, loss)
+                neptune.log_metric('Val Regression Loss', step, reg_loss)
+                neptune.log_metric('Val Classification Loss', step, cls_loss)
+
+                with torch.no_grad():
+                    stats = evaluate(model.model, params.params, step=step)
+
+                neptune.log_metric('AP at IoU=.50:.05:.95', step, stats[0])
+                neptune.log_metric('AP at IoU=.50', step, stats[1])
+                neptune.log_metric('AP at IoU=.75', step, stats[2])
+                neptune.log_metric('AR given 1 detection per image', step, stats[6])
+                neptune.log_metric('AR given 10 detection per image', step, stats[7])
+                neptune.log_metric('AR given 100 detection per image', step, stats[8])
+
+                if loss + opt.es_min_delta < best_loss:
+                    best_loss = loss
+                    best_epoch = epoch
+                    best_step = step
+                    checkpoint_name = f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth'
+                    checkpoint_path = save_checkpoint(model, opt.saved_path, checkpoint_name)
+                    best_checkpoint = checkpoint_path
+
+                model.train()
+
             progress_bar = tqdm(training_generator)
             for iter, data in enumerate(progress_bar):
                 if iter < step - last_epoch * num_iter_per_epoch:
@@ -306,76 +367,17 @@ def train(opt):
             neptune.log_metric('Epoch Classification Loss', step, np.mean(epoch_cls_loss))
             neptune.log_metric('Epoch Regression Loss', step, np.mean(epoch_reg_loss))
 
-            if epoch % opt.val_interval == 0:
-                model.eval()
-                loss_regression_ls = []
-                loss_classification_ls = []
-                for iter, data in enumerate(val_generator):
-                    with torch.no_grad():
-                        imgs = data['img']
-                        annot = data['annot']
-
-                        if params.num_gpus == 1:
-                            imgs = imgs.cuda()
-                            annot = annot.cuda()
-
-                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
-                        cls_loss = cls_loss.mean()
-                        reg_loss = reg_loss.mean()
-
-                        loss = cls_loss + reg_loss
-                        if loss == 0 or not torch.isfinite(loss):
-                            continue
-
-                        loss_classification_ls.append(cls_loss.item())
-                        loss_regression_ls.append(reg_loss.item())
-
-                cls_loss = np.mean(loss_classification_ls)
-                reg_loss = np.mean(loss_regression_ls)
-                loss = cls_loss + reg_loss
-
-                print(
-                    'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
-                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
-                writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Regression Loss', {'val': reg_loss}, step)
-                writer.add_scalars('Classfication Loss', {'val': cls_loss}, step)
-
-                neptune.log_metric('Val Loss', step, loss)
-                neptune.log_metric('Val Regression Loss', step, reg_loss)
-                neptune.log_metric('Val Classification Loss', step, cls_loss)
-
-                with torch.no_grad():
-                    stats = evaluate(model.model, params.params, step=step)
-
-                neptune.log_metric('AP at IoU=.50:.05:.95', step, stats[0])
-                neptune.log_metric('AP at IoU=.50', step, stats[1])
-                neptune.log_metric('AP at IoU=.75', step, stats[2])
-                neptune.log_metric('AR given 1 detection per image', step, stats[6])
-                neptune.log_metric('AR given 10 detection per image', step, stats[7])
-                neptune.log_metric('AR given 100 detection per image', step, stats[8])
-
-                if loss + opt.es_min_delta < best_loss:
-                    best_loss = loss
-                    best_epoch = epoch
-
-                    checkpoint_name = f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth'
-                    checkpoint_path = save_checkpoint(model, opt.saved_path, checkpoint_name)
-                    best_checkpoint = checkpoint_path
-
-                model.train()
-
-                # Early stopping
-                if epoch - best_epoch > opt.es_patience > 0:
-                    print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
-                    break
+            # Early stopping
+            if epoch - best_epoch > opt.es_patience > 0:
+                print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
+                break
 
     except KeyboardInterrupt:
         save_checkpoint(model, opt.saved_path, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
-        send_best_checkpoint(best_checkpoint)
+        send_best_checkpoint(best_checkpoint, best_step)
         writer.close()
     writer.close()
-    send_best_checkpoint(best_checkpoint)
+    send_best_checkpoint(best_checkpoint, best_step)
     neptune.stop()
 
 
@@ -388,8 +390,8 @@ def save_checkpoint(model, saved_path, name):
     return path
 
 
-def send_best_checkpoint(best_checkpoint):
-    if best_checkpoint:
+def send_best_checkpoint(best_checkpoint, best_step):
+    if best_checkpoint and best_step != 0:
         neptune.log_artifact(best_checkpoint)
 
 
