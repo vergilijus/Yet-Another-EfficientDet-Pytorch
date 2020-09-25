@@ -53,6 +53,7 @@ def get_args():
                                                                    ' very final stage then switch to \'sgd\'')
     parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--val_interval', type=int, default=1, help='Number of epoches between valing phases')
+    parser.add_argument('--val_threshold', type=float, default=0.3, help='Detection threshold for validation')
     parser.add_argument('--save_interval', type=int, default=500, help='Number of steps between saving')
     parser.add_argument('--es_min_delta', type=float, default=0.0,
                         help='Early stopping\'s parameter: minimum change loss to qualify as an improvement')
@@ -286,7 +287,7 @@ def train(opt):
                 neptune.log_metric('Val Classification Loss', step, cls_loss)
 
                 with torch.no_grad():
-                    stats = evaluate(model.model, params.params, step=step)
+                    stats = evaluate(model.model, params.params, threshold=opt.val_threshold, step=step)
 
                 neptune.log_metric('AP at IoU=.50:.05:.95', step, stats[0])
                 neptune.log_metric('AP at IoU=.50', step, stats[1])
