@@ -97,7 +97,11 @@ def train(opt):
 
     data_path = os.path.join(opt.data_path, params.project_name)
 
-    neptune.create_experiment(name='EfficientDet', params=all_params, upload_source_files=['train.py'])
+    tags = ['EfficientDet', f'D{opt.compound_coef}', f'bs{opt.batch_size}', opt.optim]
+    if opt.head_only:
+        tags.append('head_only')
+
+    neptune.create_experiment(name='EfficientDet', tags=tags, params=all_params, upload_source_files=['train.py'])
     log_data_version(data_path)
 
     if params.num_gpus == 0:
@@ -108,8 +112,8 @@ def train(opt):
     else:
         torch.manual_seed(42)
 
-    opt.saved_path = opt.saved_path + f'/{params.project_name}/'
-    opt.log_path = opt.log_path + f'/{params.project_name}/tensorboard/'
+    opt.saved_path = os.path.join(opt.saved_path, params.project_name)
+    opt.log_path = os.path.join(opt.log_path, params.project_name, 'tensorboard/')
     os.makedirs(opt.log_path, exist_ok=True)
     os.makedirs(opt.saved_path, exist_ok=True)
 
@@ -211,6 +215,7 @@ def train(opt):
     epoch = 0
     best_loss = 1e5
     best_epoch = 0
+    best_checkpoint = None
     step = max(0, last_step)
     model.train()
 
@@ -277,7 +282,7 @@ def train(opt):
                     step += 1
 
                     if step % opt.save_interval == 0 and step > 0:
-                        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                        save_checkpoint(model, opt.saved_path, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
                         print('checkpoint...')
 
                 except Exception as e:
@@ -343,7 +348,9 @@ def train(opt):
                     best_loss = loss
                     best_epoch = epoch
 
-                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                    checkpoint_name = f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth'
+                    checkpoint_path = save_checkpoint(model, opt.saved_path, checkpoint_name)
+                    best_checkpoint = checkpoint_path
 
                 model.train()
 
@@ -351,18 +358,28 @@ def train(opt):
                 if epoch - best_epoch > opt.es_patience > 0:
                     print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
                     break
+
     except KeyboardInterrupt:
-        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+        save_checkpoint(model, opt.saved_path, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
         writer.close()
+        send_best_checkpoint(best_checkpoint)
     writer.close()
+    send_best_checkpoint(best_checkpoint)
     neptune.stop()
 
 
-def save_checkpoint(model, name):
+def save_checkpoint(model, saved_path, name):
+    path = os.path.join(saved_path, name)
     if isinstance(model, CustomDataParallel):
-        torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.module.model.state_dict(), path)
     else:
-        torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.model.state_dict(), path)
+    return path
+
+
+def send_best_checkpoint(best_checkpoint):
+    if best_checkpoint:
+        neptune.log_artifact(best_checkpoint)
 
 
 if __name__ == '__main__':
