@@ -103,6 +103,9 @@ def train(opt):
     if opt.head_only:
         tags.append('head_only')
 
+    if len(params.obj_list) == 1:
+        tags.append('one_class')
+
     neptune.create_experiment(name='EfficientDet',
                               tags=tags,
                               params=all_params,
