@@ -107,6 +107,9 @@ def train(opt):
     if len(params.obj_list) == 1:
         tags.append('one_class')
 
+    if opt.no_aug:
+        tags.append('no_aug')
+
     neptune.create_experiment(name='EfficientDet',
                               tags=tags,
                               params=all_params,
