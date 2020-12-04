@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='efficientdet',
+    name='effdet',
     version='0.0.1',
     description='The pytorch re-implement of the official efficientdet.',
     python_requires='>=3.7',
