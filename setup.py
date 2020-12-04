@@ -17,6 +17,6 @@ setup(
         'webcolors',
         'torch==1.4.0',
         'torchvision==0.5.0',
-        'neptune-core'
+        'neptune-client'
     ]
 )
