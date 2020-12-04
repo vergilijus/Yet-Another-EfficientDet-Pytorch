@@ -5,6 +5,8 @@ setup(
     version='0.0.1',
     description='The pytorch re-implement of the official efficientdet.',
     python_requires='>=3.7',
+    package_dir={'': 'src'},
+    packages=find_packages(where='src'),
     install_requires=[
         'numpy',
         'tqdm',
